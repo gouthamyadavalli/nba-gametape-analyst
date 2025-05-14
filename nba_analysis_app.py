@@ -476,7 +476,7 @@ elif st.session_state.page == "Upload Clips":
             if st.button("Process Video"):
                 with st.spinner("Processing video..."):
                     # Save to temporary file
-                    temp_path = os.path.join(TEMP_DIR, uploaded_file.name)
+                    temp_path = os.path.join(CLIP_STORAGE_DIR, uploaded_file.name)
                     with open(temp_path, "wb") as f:
                         f.write(uploaded_file.getbuffer())
                     
