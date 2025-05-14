@@ -500,7 +500,7 @@ elif st.session_state.page == "Upload Clips":
                         
                         # Offer to go to analysis page
                         if st.button("Analyze This Clip Now"):
-                            page = "Analyze Clips"
+                            st.session.page = "Analyze Clips"
                             st.rerun()
                     else:
                         st.error("Error processing video.")
