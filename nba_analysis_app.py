@@ -433,20 +433,20 @@ if st.session_state.page == "Home":
             st.markdown("### Want to use your own clips?")
             if st.button("Upload Your Own Clips"):
                 # Change page to upload
-                page = "Upload Clips"
+                st.session_state.page = "Upload Clips"
                 st.rerun()
                 
         else:
             st.warning("No clips available. Please upload some clips first.")
             # Change page to upload
             if st.button("Upload Clips"):
-                page = "Upload Clips"
+                st.session_state.page = "Upload Clips"
                 st.rerun()
                 
     except Exception as e:
         st.error(f"Error loading clips: {str(e)}")
         # if st.button("Try Upload Instead"):
-        #     page = "Upload Clips"
+        #     st.session_state.page = "Upload Clips"
         #     st.rerun()
 
 # 1. UPLOAD CLIPS PAGE
@@ -500,7 +500,7 @@ elif st.session_state.page == "Upload Clips":
                         
                         # Offer to go to analysis page
                         if st.button("Analyze This Clip Now"):
-                            st.session.page = "Analyze Clips"
+                            st.session_state.page = "Analyze Clips"
                             st.rerun()
                     else:
                         st.error("Error processing video.")
@@ -540,7 +540,7 @@ elif st.session_state.page == "Upload Clips":
                             
                             # Offer to go to analysis page
                             if st.button("Analyze This Clip Now"):
-                                page = "Analyze Clips"
+                                st.session_state.page = "Analyze Clips"
                                 st.rerun()
                         else:
                             st.error("Error downloading video from YouTube.")
@@ -586,7 +586,7 @@ elif st.session_state.page == "Upload Clips":
                     
                     # Offer to go to analysis page
                     if st.button("Analyze This Clip Now"):
-                        page = "Analyze Clips"
+                        st.session_state.page = "Analyze Clips"
                         st.rerun()
         else:
             st.info("No clips uploaded yet.")
@@ -601,7 +601,7 @@ elif st.session_state.page == "Analyze Clips":
     if st.session_state.first_visit and not st.session_state.current_clip_path:
         st.warning("Please select a clip first.")
         if st.button("Go to Home"):
-            page = "Home"
+            st.session_state.page = "Home"
             st.rerun()
         st.stop()
     
@@ -648,11 +648,11 @@ elif st.session_state.page == "Analyze Clips":
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Go to Home"):
-                page = "Home"
+                st.session_state.page = "Home"
                 st.rerun()
         with col2:
             if st.button("Upload a Clip"):
-                page = "Upload Clips"
+                st.session_state.page = "Upload Clips"
                 st.rerun()
                 
         st.stop()
@@ -685,7 +685,7 @@ elif st.session_state.page == "Analyze Clips":
     
     # Add button to change clip
     if st.button("Change Clip"):
-        page = "Home"
+        st.session_state.page = "Home"
         st.rerun()
     
     # Analysis options
@@ -740,7 +740,7 @@ elif st.session_state.page == "Analyze Clips":
                     
                     # Link to view full analysis
                     if st.button("View Full Analysis"):
-                        page = "View Analysis"
+                        st.session_state.page = "View Analysis"
                         st.rerun()
             except Exception as e:
                 st.error(f"Error generating analysis: {str(e)}")
@@ -751,7 +751,7 @@ elif st.session_state.page == "Analyze Clips":
 
     with col1:
         if st.button("⬅️ Back to Home"):
-            st.session_state.page = "Home"
+            st.session_state.st.session_state.page = "Home"
             st.rerun()
             
     with col2:
@@ -782,11 +782,11 @@ elif st.session_state.page == "View Analysis":
                 # If we have a selected clip, offer to analyze it
                 if st.session_state.current_clip_id:
                     if st.button("Analyze Current Clip"):
-                        page = "Analyze Clips"
+                        st.session_state.page = "Analyze Clips"
                         st.rerun()
                 else:
                     if st.button("Select a Clip"):
-                        page = "Home"
+                        st.session_state.page = "Home"
                         st.rerun()
                 
                 st.stop()
@@ -811,11 +811,11 @@ elif st.session_state.page == "View Analysis":
         # If we have a selected clip, offer to analyze it
         if st.session_state.current_clip_id:
             if st.button("Analyze Current Clip"):
-                page = "Analyze Clips"
+                st.session_state.page = "Analyze Clips"
                 st.rerun()
         else:
             if st.button("Select a Clip"):
-                page = "Home"
+                st.session_state.page = "Home"
                 st.rerun()
                 
         st.stop()
@@ -936,12 +936,12 @@ elif st.session_state.page == "View Analysis":
                 st.session_state.current_clip_path = st.session_state.clip_manager.get_clip(clip_id)["local_path"]
                 
                 # Go to analyze page
-                page = "Analyze Clips"
+                st.session_state.page = "Analyze Clips"
                 st.rerun()
                 
         with col2:
             if st.button("Select a Different Clip"):
-                page = "Home"
+                st.session_state.page = "Home"
                 st.rerun()
 
 # 4. ABOUT PAGE
