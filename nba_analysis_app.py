@@ -12,6 +12,12 @@ from typing import Dict, List, Optional
 import sys
 import uuid
 from dotenv import load_dotenv
+import subprocess
+import base64
+from PIL import Image
+import io
+
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -101,6 +107,106 @@ def read_analysis_file(file_path):
     except Exception as e:
         st.error(f"Error reading analysis file: {str(e)}")
         return None
+    
+def get_video_thumbnail(video_path, max_width=320):
+    """
+    Extract a thumbnail from a video file
+    
+    Args:
+        video_path: Path to the video file
+        max_width: Maximum width for the thumbnail
+        
+    Returns:
+        HTML string with the thumbnail image
+    """
+    try:
+        # Check if file exists and is a video
+        if not os.path.exists(video_path) or video_path.endswith('.txt'):
+            return None
+            
+        # Create thumbnails directory if it doesn't exist
+        thumbnails_dir = os.path.join(TEMP_DIR, "thumbnails")
+        os.makedirs(thumbnails_dir, exist_ok=True)
+        
+        # Generate a unique thumbnail path
+        thumbnail_path = os.path.join(thumbnails_dir, f"{os.path.basename(video_path)}_thumb.jpg")
+        
+        # Check if thumbnail already exists to avoid regenerating
+        if not os.path.exists(thumbnail_path):
+            # Use FFmpeg to extract a frame from the video (around 1 second in)
+            try:
+                # Try FFmpeg if available
+                subprocess.run([
+                    'ffmpeg',
+                    '-i', video_path,
+                    '-ss', '00:00:01',  # Seek to 1 second
+                    '-frames:v', '1',   # Extract 1 frame
+                    '-q:v', '2',        # High quality
+                    '-y',               # Overwrite if exists
+                    thumbnail_path
+                ], check=True, capture_output=True)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                # FFmpeg not available, try a simpler approach with PIL/MoviePy if installed
+                try:
+                    from moviepy import VideoFileClip
+                    clip = VideoFileClip(video_path)
+                    clip.save_frame(thumbnail_path, t=1)  # Get frame at 1 second
+                    clip.close()
+                except ImportError:
+                    # Neither FFmpeg nor MoviePy available
+                    return None
+        
+        # If thumbnail was generated successfully, return it
+        if os.path.exists(thumbnail_path):
+            # Resize if needed
+            try:
+                img = Image.open(thumbnail_path)
+                # Calculate height while maintaining aspect ratio
+                width, height = img.size
+                if width > max_width:
+                    ratio = max_width / width
+                    new_height = int(height * ratio)
+                    img = img.resize((max_width, new_height), Image.LANCZOS)
+                
+                # Convert to bytes
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format='JPEG')
+                img_byte_arr.seek(0)
+                
+                # Return as base64 for displaying in HTML
+                encoded = base64.b64encode(img_byte_arr.read()).decode()
+                return f"data:image/jpeg;base64,{encoded}"
+            except Exception as e:
+                # If image processing fails, return the path
+                return thumbnail_path
+        
+        return None
+    except Exception as e:
+        # If anything fails, return None
+        return None
+
+# Add this function to create a play button overlay on thumbnails
+def create_thumbnail_with_play_button(thumbnail_base64):
+    """
+    Add a play button overlay to a thumbnail
+    
+    Args:
+        thumbnail_base64: Base64 encoded thumbnail image
+        
+    Returns:
+        HTML string with the thumbnail and play button
+    """
+    html = f"""
+    <div style="position: relative; width: 100%; max-width: 320px;">
+        <img src="{thumbnail_base64}" style="width: 100%; border-radius: 5px;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 16.5V7.5L16 12L10 16.5Z" fill="rgba(0, 0, 0, 0.7)" stroke="white" stroke-width="0.5"/>
+            </svg>
+        </div>
+    </div>
+    """
+    return html
 
 # Initialize session state
 if 'analysis_engine' not in st.session_state:
@@ -129,13 +235,21 @@ if 'first_visit' not in st.session_state:
 # App title and description
 st.title("🏀 NBA Game Analysis System")
 
+# Set default page in session state if not already set
+if 'page' not in st.session_state:
+    st.session_state.page = "Home"
+
 # Sidebar navigation
 st.sidebar.title("Navigation")
+# Use the session state to determine the default value
 page = st.sidebar.radio("Go to", 
-    ["Home", "Upload Clips", "Analyze Clips", "View Analysis", "About"])
+    ["Home", "Upload Clips", "Analyze Clips", "View Analysis", "About"],
+    index=["Home", "Upload Clips", "Analyze Clips", "View Analysis", "About"].index(st.session_state.page))
 
+# Update the session state when navigation changes
+st.session_state.page = page
 # HOME PAGE - New page for first-time visitors
-if page == "Home":
+if st.session_state.page == "Home":
     # Welcome message and quick intro
     st.markdown("""
     ## Welcome to the NBA Game Analysis System
@@ -224,35 +338,97 @@ if page == "Home":
                 })
             
             # Display clips in a visual grid
+            # In the HOME PAGE section, update the clip selection code:
+
+            # Display clips in a visual grid
             col1, col2 = st.columns(2)
-            
+
             for i, clip in enumerate(clip_data):
                 with col1 if i % 2 == 0 else col2:
+                    # Check if this clip is currently selected
+                    is_selected = st.session_state.get('current_clip_id') == clip['id']
+                    
+                    # Apply visual styling based on selection status
+                    container_style = "border: 3px solid #0366d6; border-radius: 10px; padding: 10px;" if is_selected else "border: 1px solid #ddd; border-radius: 10px; padding: 10px;"
+                    
                     with st.container():
-                        st.markdown(f"### {clip['title']}")
+                        # Add a container with conditional styling
+                        st.markdown(f'<div style="{container_style}">', unsafe_allow_html=True)
+                        
+                        # Display clip title with selection indicator
+                        if is_selected:
+                            st.markdown(f"### 🔵 {clip['title']} (Selected)")
+                        else:
+                            st.markdown(f"### {clip['title']}")
+                            
                         st.markdown(f"*{clip['description']}*")
                         
-                        # Add a thumbnail or icon
-                        if clip["source"] == "youtube":
-                            st.image("https://via.placeholder.com/320x180?text=YouTube+Clip", width=320)
-                        elif clip["source"] == "sample":
-                            st.image("https://via.placeholder.com/320x180?text=Sample+NBA+Clip", width=320)
+                        # Get the actual clip path
+                        clip_obj = next((c for c in clips if c['clip_id'] == clip['id']), None)
+                        
+                        # Add a thumbnail or video preview
+                        if clip_obj and 'local_path' in clip_obj:
+                            clip_path = clip_obj['local_path']
+                            
+                            # If it's a video file and exists
+                            if os.path.exists(clip_path) and not clip_path.endswith('.txt'):
+                                # Try to get a thumbnail
+                                thumbnail = get_video_thumbnail(clip_path)
+                                
+                                if thumbnail:
+                                    # If the thumbnail is a base64 string
+                                    if thumbnail.startswith('data:'):
+                                        play_button_html = create_thumbnail_with_play_button(thumbnail)
+                                        st.markdown(play_button_html, unsafe_allow_html=True)
+                                    # If it's a file path
+                                    else:
+                                        st.image(thumbnail, width=320)
+                                else:
+                                    # Fallback to trying to display the video
+                                    try:
+                                        st.video(clip_path)
+                                    except Exception:
+                                        # Last resort: placeholder
+                                        st.image("https://via.placeholder.com/320x180?text=Video+Preview", width=320)
+                            # For sample/text clips, show a placeholder
+                            elif clip["source"] == "youtube":
+                                st.image("https://via.placeholder.com/320x180?text=YouTube+Clip", width=320)
+                            elif clip["source"] == "sample":
+                                st.image("https://via.placeholder.com/320x180?text=Sample+NBA+Clip", width=320)
+                            else:
+                                st.image("https://via.placeholder.com/320x180?text=NBA+Clip", width=320)
                         else:
+                            # Fallback image if clip not found
                             st.image("https://via.placeholder.com/320x180?text=NBA+Clip", width=320)
                         
-                        # Add button to select this clip
-                        if st.button(f"Select This Clip", key=f"select_{clip['id']}"):
-                            selected_clip = st.session_state.clip_manager.get_clip(clip['id'])
-                            if selected_clip:
-                                st.session_state.current_clip_path = selected_clip["local_path"]
-                                st.session_state.current_clip_id = selected_clip["clip_id"]
-                                st.success(f"Selected clip: {selected_clip['title']}")
-                                st.session_state.first_visit = False
-                                # Redirect to analysis page
+                        # Conditional buttons based on selection status
+                        if is_selected:
+                            # For selected clip, show an "Analyze Now" button
+                            if st.button("📊 Analyze This Clip", key=f"analyze_{clip['id']}"):
+                                # Navigate to analysis page
+                                st.session_state.page = "Analyze Clips"
                                 st.rerun()
+                        else:
+                            # For unselected clips, show a "Select This Clip" button
+                            if st.button(f"🎬 Select This Clip", key=f"select_{clip['id']}"):
+                                selected_clip = st.session_state.clip_manager.get_clip(clip['id'])
+                                if selected_clip:
+                                    st.session_state.current_clip_path = selected_clip["local_path"]
+                                    st.session_state.current_clip_id = selected_clip["clip_id"]
+                                    st.session_state.first_visit = False
+                                    
+                                    # Set the selected clip indicator
+                                    st.success(f"Selected: {selected_clip['title']}")
+                                    
+                                    # Navigate to analysis page automatically
+                                    st.session_state.page = "Analyze Clips"
+                                    st.rerun()
                         
-                        st.markdown("---")
-            
+                        # Close the styled container div
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Add some space between clips
+                        st.markdown("<br>", unsafe_allow_html=True)
             # Add button to upload your own clip
             st.markdown("### Want to use your own clips?")
             if st.button("Upload Your Own Clips"):
@@ -269,12 +445,12 @@ if page == "Home":
                 
     except Exception as e:
         st.error(f"Error loading clips: {str(e)}")
-        if st.button("Try Upload Instead"):
-            page = "Upload Clips"
-            st.rerun()
+        # if st.button("Try Upload Instead"):
+        #     page = "Upload Clips"
+        #     st.rerun()
 
 # 1. UPLOAD CLIPS PAGE
-elif page == "Upload Clips":
+elif st.session_state.page == "Upload Clips":
     st.header("Upload Game Clips")
     
     tab1, tab2 = st.tabs(["Upload Video", "YouTube Link"])
@@ -417,7 +593,7 @@ elif page == "Upload Clips":
         st.error(f"Error loading clips: {str(e)}")
 
 # 2. ANALYZE CLIPS PAGE
-elif page == "Analyze Clips":
+elif st.session_state.page == "Analyze Clips":
     st.header("Analyze Game Clips")
     
     # If first visit and no clip selected, redirect to home
@@ -568,8 +744,29 @@ elif page == "Analyze Clips":
             except Exception as e:
                 st.error(f"Error generating analysis: {str(e)}")
 
+    # Add navigation buttons
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if st.button("⬅️ Back to Home"):
+            st.session_state.page = "Home"
+            st.rerun()
+            
+    with col2:
+        pass  # Empty column for spacing
+        
+    with col3:
+        # Only show this button if analysis has been generated
+        if st.session_state.current_clip_id:
+            result_key = f"{st.session_state.current_clip_id}_{analysis_type}"
+            if result_key in st.session_state.analysis_results:
+                if st.button("➡️ View Analysis Results"):
+                    st.session_state.page = "View Analysis"
+                    st.rerun()
+
 # 3. VIEW ANALYSIS PAGE
-elif page == "View Analysis":
+elif st.session_state.page == "View Analysis":
     st.header("View Analysis Results")
     
     # Check if we have any analysis results
