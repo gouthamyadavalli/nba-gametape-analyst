@@ -510,7 +510,8 @@ elif st.session_state.page == "Upload Clips":
         youtube_url = st.text_input("YouTube Video URL")
         video_title = st.text_input("Video Title (optional for YouTube)")
         video_description = st.text_area("Description (optional)", 
-                                      placeholder="Brief description of this clip")
+                                      placeholder="Brief description of this clip",
+                                      key="upload_video_description")
         
         if youtube_url:
             if st.button("Fetch from YouTube"):
