@@ -404,7 +404,7 @@ class DirectAnalysisEngine:
             """
             
             # Use regular Gemini Pro for text processing
-            text_model = genai.GenerativeModel("gemini-pro")
+            text_model = genai.GenerativeModel("gemini-2.0-flash")
             
             # Generate summary with Gemini
             response = text_model.generate_content(prompt)

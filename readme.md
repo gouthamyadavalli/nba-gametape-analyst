@@ -22,6 +22,8 @@ The system can:
 - **Defensive Analysis**: Breakdown of defensive schemes, rotations, and effectiveness
 - **Player Focus**: Detailed analysis of individual techniques and decision-making
 - **Coaching Perspective**: Insights from a coach's viewpoint with teaching points
+- **Identify Key Moments**: Highlight critical plays and turning points in the game
+- **Game Summary**: Concise summary of the game with highlights and lowlights
 
 ### Vector Search Capabilities
 

@@ -11,6 +11,10 @@ import base64
 from typing import Dict, List, Optional
 import sys
 import uuid
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import our modules
 # Add proper paths to ensure imports work
@@ -42,6 +46,46 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Get API key from multiple sources
+api_key = None
+
+# 1. Try Streamlit secrets
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except:
+    pass
+
+# 2. Try environment variables
+if not api_key:
+    api_key = os.environ.get("GEMINI_API_KEY")
+
+# 3. If still no API key, ask the user
+if not api_key:
+    st.title("🏀 NBA Game Analysis System")
+    st.header("API Key Required")
+    
+    with st.form("api_key_form"):
+        user_api_key = st.text_input("Enter your Gemini API Key:", type="password")
+        submitted = st.form_submit_button("Save API Key")
+        
+        if submitted and user_api_key:
+            api_key = user_api_key
+            st.session_state.GEMINI_API_KEY = api_key
+            st.success("API Key saved!")
+            st.rerun()
+        
+        st.markdown("""
+        ### How to get a Gemini API Key:
+        1. Go to [Google AI Studio](https://ai.google.dev/)
+        2. Create or sign in to your account
+        3. Go to API Keys and create a new key
+        """)
+    
+    st.stop()
+
+# Store the API key in session state for future use
+st.session_state.GEMINI_API_KEY = api_key
+
 # Functions to handle file downloading
 def get_binary_file_downloader_html(bin_file, file_label='File'):
     with open(bin_file, 'rb') as f:
@@ -61,10 +105,10 @@ def read_analysis_file(file_path):
 # Initialize session state
 if 'analysis_engine' not in st.session_state:
     try:
-        st.session_state.analysis_engine = DirectAnalysisEngine()
+        st.session_state.analysis_engine = DirectAnalysisEngine(api_key=api_key)
     except Exception as e:
         st.error(f"Error initializing analysis engine: {str(e)}")
-        st.error("Make sure you have set the GEMINI_API_KEY environment variable.")
+        st.error("Make sure your Gemini API key is valid.")
         st.stop()
 
 if 'clip_manager' not in st.session_state:
@@ -78,21 +122,159 @@ if 'current_clip_id' not in st.session_state:
     
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = {}
+    
+if 'first_visit' not in st.session_state:
+    st.session_state.first_visit = True
 
 # App title and description
 st.title("🏀 NBA Game Analysis System")
-st.markdown("""
-This system uses AI to analyze NBA game clips and provide professional-level insights.
-Upload a clip or provide a YouTube link to get started.
-""")
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", 
-    ["Upload Clips", "Analyze Clips", "View Analysis", "About"])
+    ["Home", "Upload Clips", "Analyze Clips", "View Analysis", "About"])
+
+# HOME PAGE - New page for first-time visitors
+if page == "Home":
+    # Welcome message and quick intro
+    st.markdown("""
+    ## Welcome to the NBA Game Analysis System
+    
+    This AI-powered tool helps you analyze basketball clips like a professional analyst. 
+    You can start by exploring our sample clips below or upload your own.
+    """)
+    
+    # Display available clips in a more visual way
+    st.subheader("Available Game Clips")
+    
+    try:
+        # Get all clips
+        clips = st.session_state.clip_manager.get_all_clips()
+        
+        if not clips:
+            # Create sample clips if none exist
+            with st.spinner("Setting up sample clips for you..."):
+                # Create a few dummy clips with different themes
+                sample_clips = [
+                    {"title": "LeBron James Highlight Reel", "description": "Showcase of LeBron's best plays including dunks and assists"},
+                    {"title": "Stephen Curry Three-Point Exhibition", "description": "Collection of Curry's remarkable three-point shots"},
+                    {"title": "Defensive Masterclass", "description": "Examples of elite NBA defensive plays and strategies"}
+                ]
+                
+                created_clips = []
+                for sample in sample_clips:
+                    # Create a sample clip
+                    clip_id = f"sample_{uuid.uuid4().hex[:8]}"
+                    local_path = os.path.join(CLIP_STORAGE_DIR, f"{clip_id}.txt")
+                    
+                    # Create a dummy file with NBA play description
+                    with open(local_path, 'w') as f:
+                        f.write(f"Sample NBA clip: {sample['title']}\n\n")
+                        f.write(f"Description: {sample['description']}\n\n")
+                        f.write("Play-by-play contents:\n")
+                        
+                        if "LeBron" in sample['title']:
+                            f.write("0:05 - LeBron drives to the basket, crossover on defender\n")
+                            f.write("0:08 - Elevates for a powerful dunk over two defenders!\n")
+                            f.write("0:24 - Fast break opportunity, LeBron with a behind-the-back pass\n")
+                            f.write("0:45 - LeBron with a chase-down block on the opposing player\n")
+                        elif "Curry" in sample['title']:
+                            f.write("0:12 - Curry with a deep three from 30 feet... BANG!\n")
+                            f.write("0:33 - Behind the back dribble, step back, another three pointer\n")
+                            f.write("0:51 - Curry catches, pump fake, side step, releases... three points!\n")
+                        else:
+                            f.write("0:08 - Perfectly timed help defense prevents an easy layup\n")
+                            f.write("0:22 - Quick hands lead to a steal and transition opportunity\n")
+                            f.write("0:40 - Textbook defensive rotation to close out on the shooter\n")
+                    
+                    # Create metadata
+                    clip_metadata = {
+                        "clip_id": clip_id,
+                        "source": "sample",
+                        "local_path": local_path,
+                        "acquired_at": datetime.now().isoformat(),
+                        "title": sample['title'],
+                        "description": sample['description'],
+                        "duration": 60,
+                        "is_sample": True,
+                        "processed": False
+                    }
+                    
+                    # Save clip metadata
+                    try:
+                        st.session_state.clip_manager.upload_clip = lambda *args, **kwargs: clip_metadata
+                        created_clips.append(clip_metadata)
+                    except Exception as e:
+                        st.error(f"Error creating sample clip: {str(e)}")
+                
+                # Update clips list
+                clips = created_clips
+        
+        # Display clips in a grid layout
+        if clips:
+            # Create a DataFrame for display
+            clip_data = []
+            for clip in clips:
+                clip_data.append({
+                    "id": clip.get("clip_id", "Unknown"),
+                    "title": clip.get("title", "Untitled"),
+                    "source": clip.get("source", "Unknown"),
+                    "uploaded": clip.get("acquired_at", "Unknown")[:10] if clip.get("acquired_at") else "Unknown",
+                    "description": clip.get("description", "No description available")
+                })
+            
+            # Display clips in a visual grid
+            col1, col2 = st.columns(2)
+            
+            for i, clip in enumerate(clip_data):
+                with col1 if i % 2 == 0 else col2:
+                    with st.container():
+                        st.markdown(f"### {clip['title']}")
+                        st.markdown(f"*{clip['description']}*")
+                        
+                        # Add a thumbnail or icon
+                        if clip["source"] == "youtube":
+                            st.image("https://via.placeholder.com/320x180?text=YouTube+Clip", width=320)
+                        elif clip["source"] == "sample":
+                            st.image("https://via.placeholder.com/320x180?text=Sample+NBA+Clip", width=320)
+                        else:
+                            st.image("https://via.placeholder.com/320x180?text=NBA+Clip", width=320)
+                        
+                        # Add button to select this clip
+                        if st.button(f"Select This Clip", key=f"select_{clip['id']}"):
+                            selected_clip = st.session_state.clip_manager.get_clip(clip['id'])
+                            if selected_clip:
+                                st.session_state.current_clip_path = selected_clip["local_path"]
+                                st.session_state.current_clip_id = selected_clip["clip_id"]
+                                st.success(f"Selected clip: {selected_clip['title']}")
+                                st.session_state.first_visit = False
+                                # Redirect to analysis page
+                                st.rerun()
+                        
+                        st.markdown("---")
+            
+            # Add button to upload your own clip
+            st.markdown("### Want to use your own clips?")
+            if st.button("Upload Your Own Clips"):
+                # Change page to upload
+                page = "Upload Clips"
+                st.rerun()
+                
+        else:
+            st.warning("No clips available. Please upload some clips first.")
+            # Change page to upload
+            if st.button("Upload Clips"):
+                page = "Upload Clips"
+                st.rerun()
+                
+    except Exception as e:
+        st.error(f"Error loading clips: {str(e)}")
+        if st.button("Try Upload Instead"):
+            page = "Upload Clips"
+            st.rerun()
 
 # 1. UPLOAD CLIPS PAGE
-if page == "Upload Clips":
+elif page == "Upload Clips":
     st.header("Upload Game Clips")
     
     tab1, tab2 = st.tabs(["Upload Video", "YouTube Link"])
@@ -110,6 +292,10 @@ if page == "Upload Clips":
             with col1:
                 video_title = st.text_input("Video Title (optional)", 
                                            value=uploaded_file.name)
+                                           
+            with col2:
+                video_description = st.text_area("Description (optional)", 
+                                              placeholder="Brief description of this clip")
             
             if st.button("Process Video"):
                 with st.spinner("Processing video..."):
@@ -125,12 +311,21 @@ if page == "Upload Clips":
                         video_title
                     )
                     
+                    # Add description if provided
+                    if clip_metadata and video_description:
+                        clip_metadata["description"] = video_description
+                    
                     if clip_metadata:
                         st.session_state.current_clip_path = clip_metadata["local_path"]
                         st.session_state.current_clip_id = clip_metadata["clip_id"]
+                        st.session_state.first_visit = False
                         
                         st.success(f"Video processed successfully! Clip ID: {clip_metadata['clip_id']}")
-                        st.markdown("Go to the **Analyze Clips** page to generate insights.")
+                        
+                        # Offer to go to analysis page
+                        if st.button("Analyze This Clip Now"):
+                            page = "Analyze Clips"
+                            st.rerun()
                     else:
                         st.error("Error processing video.")
     
@@ -138,6 +333,8 @@ if page == "Upload Clips":
     with tab2:
         youtube_url = st.text_input("YouTube Video URL")
         video_title = st.text_input("Video Title (optional for YouTube)")
+        video_description = st.text_area("Description (optional)", 
+                                      placeholder="Brief description of this clip")
         
         if youtube_url:
             if st.button("Fetch from YouTube"):
@@ -149,25 +346,34 @@ if page == "Upload Clips":
                             video_title
                         )
                         
+                        # Add description if provided
+                        if clip_metadata and video_description:
+                            clip_metadata["description"] = video_description
+                        
                         if clip_metadata:
                             st.session_state.current_clip_path = clip_metadata["local_path"]
                             st.session_state.current_clip_id = clip_metadata["clip_id"]
+                            st.session_state.first_visit = False
                             
                             # Display video if available
                             if os.path.exists(clip_metadata["local_path"]):
                                 st.video(clip_metadata["local_path"])
                             
                             st.success(f"Video downloaded successfully! Clip ID: {clip_metadata['clip_id']}")
-                            st.markdown("Go to the **Analyze Clips** page to generate insights.")
+                            
+                            # Offer to go to analysis page
+                            if st.button("Analyze This Clip Now"):
+                                page = "Analyze Clips"
+                                st.rerun()
                         else:
                             st.error("Error downloading video from YouTube.")
-                            st.info("Try using the 'sample clips' option on the Analyze page instead.")
+                            st.info("Try using the 'sample clips' option instead.")
                     except Exception as e:
                         st.error(f"Error: {str(e)}")
-                        st.info("Try using the 'sample clips' option on the Analyze page instead.")
+                        st.info("Try using the 'sample clips' option instead.")
     
     # List previously uploaded clips
-    st.subheader("Previously Uploaded Clips")
+    st.subheader("All Available Clips")
     try:
         clips = st.session_state.clip_manager.get_all_clips()
         
@@ -178,7 +384,8 @@ if page == "Upload Clips":
                     "Clip ID": clip.get("clip_id", "Unknown"),
                     "Title": clip.get("title", "Untitled"),
                     "Source": clip.get("source", "Unknown"),
-                    "Uploaded": clip.get("acquired_at", "Unknown"),
+                    "Uploaded": clip.get("acquired_at", "Unknown")[:10] if clip.get("acquired_at") else "Unknown",
+                    "Description": clip.get("description", "")[:50] + "..." if clip.get("description", "") else ""
                 })
             
             clip_df = pd.DataFrame(clip_df)
@@ -196,8 +403,14 @@ if page == "Upload Clips":
                 if selected_clip:
                     st.session_state.current_clip_path = selected_clip["local_path"]
                     st.session_state.current_clip_id = selected_clip["clip_id"]
+                    st.session_state.first_visit = False
+                    
                     st.success(f"Selected clip: {selected_clip['title']}")
-                    st.markdown("Go to the **Analyze Clips** page to generate insights.")
+                    
+                    # Offer to go to analysis page
+                    if st.button("Analyze This Clip Now"):
+                        page = "Analyze Clips"
+                        st.rerun()
         else:
             st.info("No clips uploaded yet.")
     except Exception as e:
@@ -206,6 +419,14 @@ if page == "Upload Clips":
 # 2. ANALYZE CLIPS PAGE
 elif page == "Analyze Clips":
     st.header("Analyze Game Clips")
+    
+    # If first visit and no clip selected, redirect to home
+    if st.session_state.first_visit and not st.session_state.current_clip_path:
+        st.warning("Please select a clip first.")
+        if st.button("Go to Home"):
+            page = "Home"
+            st.rerun()
+        st.stop()
     
     # Option to create sample clip if no clip is selected
     if not st.session_state.current_clip_path or not os.path.exists(st.session_state.current_clip_path):
@@ -247,7 +468,16 @@ elif page == "Analyze Clips":
                 except Exception as e:
                     st.error(f"Error creating sample clip: {str(e)}")
         
-        st.markdown("Or go to the **Upload Clips** page to upload a video.")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Go to Home"):
+                page = "Home"
+                st.rerun()
+        with col2:
+            if st.button("Upload a Clip"):
+                page = "Upload Clips"
+                st.rerun()
+                
         st.stop()
     
     # Display information about the current clip
@@ -261,16 +491,25 @@ elif page == "Analyze Clips":
             st.write(f"**Clip ID:** {clip_data.get('clip_id', 'Unknown')}")
             st.write(f"**Source:** {clip_data.get('source', 'Unknown')}")
         with col2:
-            st.write(f"**Uploaded:** {clip_data.get('acquired_at', 'Unknown')}")
+            st.write(f"**Uploaded:** {clip_data.get('acquired_at', 'Unknown')[:10] if clip_data.get('acquired_at') else 'Unknown'}")
             st.write(f"**Duration:** {clip_data.get('duration', 'Unknown')} seconds")
+        
+        if clip_data.get("description"):
+            st.markdown(f"**Description:** {clip_data.get('description')}")
         
         # Display video if available and not a text file
         if os.path.exists(clip_data["local_path"]) and not clip_data["local_path"].endswith(".txt"):
             st.video(clip_data["local_path"])
         elif clip_data["local_path"].endswith(".txt"):
             st.info("This is a sample/placeholder clip. Analysis will use a pre-defined basketball scenario.")
-            with open(clip_data["local_path"], 'r') as f:
-                st.code(f.read())
+            with st.expander("View Sample Content"):
+                with open(clip_data["local_path"], 'r') as f:
+                    st.code(f.read())
+    
+    # Add button to change clip
+    if st.button("Change Clip"):
+        page = "Home"
+        st.rerun()
     
     # Analysis options
     st.subheader("Analysis Options")
@@ -323,7 +562,9 @@ elif page == "Analyze Clips":
                     st.markdown(result["analysis"][:500] + "...")
                     
                     # Link to view full analysis
-                    st.markdown("View the full analysis on the **View Analysis** page.")
+                    if st.button("View Full Analysis"):
+                        page = "View Analysis"
+                        st.rerun()
             except Exception as e:
                 st.error(f"Error generating analysis: {str(e)}")
 
@@ -339,7 +580,17 @@ elif page == "View Analysis":
             
             if not analysis_files:
                 st.warning("No analysis results available.")
-                st.markdown("Go to the **Analyze Clips** page to generate an analysis.")
+                
+                # If we have a selected clip, offer to analyze it
+                if st.session_state.current_clip_id:
+                    if st.button("Analyze Current Clip"):
+                        page = "Analyze Clips"
+                        st.rerun()
+                else:
+                    if st.button("Select a Clip"):
+                        page = "Home"
+                        st.rerun()
+                
                 st.stop()
                 
             # Load all analysis files
@@ -358,17 +609,38 @@ elif page == "View Analysis":
     
     if not st.session_state.analysis_results:
         st.warning("No analysis results available.")
-        st.markdown("Go to the **Analyze Clips** page to generate an analysis.")
+        
+        # If we have a selected clip, offer to analyze it
+        if st.session_state.current_clip_id:
+            if st.button("Analyze Current Clip"):
+                page = "Analyze Clips"
+                st.rerun()
+        else:
+            if st.button("Select a Clip"):
+                page = "Home"
+                st.rerun()
+                
         st.stop()
     
     # Select analysis to view
     analysis_options = list(st.session_state.analysis_results.keys())
+# Updated code with video title:
+    def format_analysis_option(option_key):
+        """Format analysis option to include video title"""
+        clip_id = option_key.split('_')[0]
+        analysis_type = option_key.split('_')[-1].title()
+        
+        # Get video title from the analysis data
+        analysis_data = st.session_state.analysis_results[option_key]
+        video_title = analysis_data.get("video_title", "Unknown")
+        
+        return f"{video_title} - {analysis_type}"
+
     selected_analysis = st.selectbox(
         "Select Analysis to View",
         options=analysis_options,
-        format_func=lambda x: f"{x.split('_')[0]} - {x.split('_')[-1].title()}"
-    )
-    
+        format_func=format_analysis_option
+)    
     if selected_analysis and selected_analysis in st.session_state.analysis_results:
         analysis_data = st.session_state.analysis_results[selected_analysis]
         
@@ -378,7 +650,7 @@ elif page == "View Analysis":
         col1, col2 = st.columns(2)
         with col1:
             st.write(f"**Analysis Type:** {analysis_data.get('analysis_type', 'general').title()}")
-            st.write(f"**Generated:** {analysis_data.get('analyzed_at', 'Unknown')}")
+            st.write(f"**Generated:** {analysis_data.get('analyzed_at', 'Unknown')[:10] if analysis_data.get('analyzed_at') else 'Unknown'}")
         
         # Display full analysis
         st.subheader("Analysis")
@@ -403,6 +675,22 @@ elif page == "View Analysis":
                         st.info("No key segments found.")
                 except Exception as e:
                     st.error(f"Error extracting segments: {str(e)}")
+        
+        # Generate a summary
+        if st.button("Generate Summary"):
+            with st.spinner("Generating summary..."):
+                try:
+                    summary = st.session_state.analysis_engine.create_analysis_summary(
+                        analysis_data.get("analysis", "")
+                    )
+                    
+                    if summary:
+                        st.subheader("Analysis Summary")
+                        st.markdown(f"**{summary}**")
+                    else:
+                        st.info("Could not generate summary.")
+                except Exception as e:
+                    st.error(f"Error generating summary: {str(e)}")
         
         # Download options
         st.subheader("Download Options")
@@ -433,6 +721,30 @@ elif page == "View Analysis":
                 
                 # Provide download link
                 st.markdown(get_binary_file_downloader_html(temp_file, 'Text File'), unsafe_allow_html=True)
+        
+        # Option to generate new analysis
+        st.subheader("Generate More Analysis")
+        
+        # Analyze with different type
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Find clip ID from the selected analysis
+            clip_id = selected_analysis.split('_')[0]
+            
+            if st.button("Analyze This Clip with Different Type"):
+                # Set the current clip ID
+                st.session_state.current_clip_id = clip_id
+                st.session_state.current_clip_path = st.session_state.clip_manager.get_clip(clip_id)["local_path"]
+                
+                # Go to analyze page
+                page = "Analyze Clips"
+                st.rerun()
+                
+        with col2:
+            if st.button("Select a Different Clip"):
+                page = "Home"
+                st.rerun()
 
 # 4. ABOUT PAGE
 else:  # About page
@@ -449,7 +761,7 @@ else:  # About page
     
     ## How It Works
     
-    1. **Upload clips** through the upload page
+    1. **Upload clips** through the upload page or use existing ones
     2. **Generate analysis** using Google's Gemini AI model
     3. **View and export** the detailed insights
     
@@ -480,9 +792,19 @@ else:  # About page
     This application requires:
     - **GEMINI_API_KEY**: For AI analysis (from Google AI Studio)
     """)
+    
+    # Add some team info
+    st.subheader("About the Team")
+    st.markdown("""
+    This project was developed as a proof-of-concept for AI-powered sports analysis.
+    
+    The goal was to demonstrate how multimodal AI models like Gemini can transform
+    the way we analyze and understand sports footage, making professional-level
+    insights accessible to coaches, players, and fans at all levels.
+    """)
 
 # Add footer
 st.markdown("---")
 st.markdown(
-    "NBA Game Analysis System | Developed as a Proof of Concept"
+    "NBA Game Analysis System | Goutham Yadavalli"
 )
