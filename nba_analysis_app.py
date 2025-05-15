@@ -476,16 +476,18 @@ elif st.session_state.page == "Upload Clips":
             if st.button("Process Video"):
                 with st.spinner("Processing video..."):
                     # Save to temporary file
-                    temp_path = os.path.join(CLIP_STORAGE_DIR, uploaded_file.name)
+                    temp_path = os.path.join(TEMP_DIR, uploaded_file.name)
                     with open(temp_path, "wb") as f:
                         f.write(uploaded_file.getbuffer())
                     
                     # Save to clip storage
                     clip_metadata = st.session_state.clip_manager.upload_clip(
-                        uploaded_file.getbuffer(), 
-                        uploaded_file.name, 
-                        video_title
+                        file_data=uploaded_file,
+                        filename=uploaded_file.name,
+                        title=video_title
                     )
+                    print("Clip metadata:", clip_metadata)
+                    print("Clip saved")
                     
                     # Add description if provided
                     if clip_metadata and video_description:
